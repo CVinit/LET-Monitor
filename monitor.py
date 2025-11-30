@@ -131,13 +131,8 @@ class LETMonitor:
             options.add_argument('--window-size=1920,1080')
             options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
             
-            # ===== 强制使用 IPv6 =====
-            # 禁用 IPv4，强制使用 IPv6
-            options.add_argument('--disable-ipv4')
-            # 通过 DNS 优先 IPv6
-            options.add_argument('--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE ::ffff:0:0/96')
-            logger.info("🌐 Chrome 配置为优先使用 IPv6")
-            # ===== IPv6 配置结束 =====
+            # 注意：不使用 Chrome 参数强制 IPv6，因为会导致 DNS 解析失败
+            # 应该使用系统级配置（见 FORCE_IPV6.md）
             
             # 内存优化参数（防止崩溃）
             options.add_argument('--disable-extensions')
