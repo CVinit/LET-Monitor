@@ -5,7 +5,7 @@
 # 配置参数
 IPV6_PREFIX="2a0e:6a80:3:38d"  # 你的 IPv6 前缀
 INTERFACE="eth0"                # 网卡名称
-NUM_ADDRESSES=20                # 要添加的地址数量（建议10-50）
+NUM_ADDRESSES=50                # 要添加的地址数量（建议10-50）
 
 # 主 IP（用于 SSH，不会被轮换使用）
 MAIN_IP="${IPV6_PREFIX}::"
