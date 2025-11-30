@@ -137,9 +137,18 @@ class LETMonitor:
             # 内存优化参数（防止崩溃）
             options.add_argument('--disable-extensions')
             options.add_argument('--disable-plugins')
-            options.add_argument('--disable-images')  # 可选：禁用图片加载以节省内存
-            options.add_argument('--blink-settings=imagesEnabled=false')  # 禁用图片
-            options.add_argument('--disable-javascript')  # 如果不需要JS可以禁用
+            
+            # ===== Cloudflare 绕过优化 =====
+            # 注意：禁用 JS 和图片会被 Cloudflare 检测为爬虫！
+            # 为了通过 Cloudflare，我们需要保持正常行为
+            # 如果内存不足，可以重新启用这些参数，但会降低成功率
+            
+            # options.add_argument('--disable-images')  # 已禁用：会被检测
+            # options.add_argument('--blink-settings=imagesEnabled=false')  # 已禁用：会被检测
+            # options.add_argument('--disable-javascript')  # 已禁用：Cloudflare 需要 JS
+            
+            logger.info("💡 已启用 JS 和图片加载以提高 Cloudflare 通过率")
+            # ===== Cloudflare 优化结束 =====
             # 限制内存使用
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-software-rasterizer')
