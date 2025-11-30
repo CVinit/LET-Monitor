@@ -5,3 +5,6 @@ beautifulsoup4>=4.12.0
 lxml>=4.9.0
 python-telegram-bot>=20.7
 python-dotenv>=1.0.0
+
+# Playwright (替代方案，提供更好的 Cloudflare 绕过)
+playwright>=1.40.0
