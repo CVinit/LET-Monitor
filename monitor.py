@@ -122,7 +122,7 @@ class LETMonitor:
             options = uc.ChromeOptions()
             
             if Config.HEADLESS:
-                options.add_argument('--headless=new')
+                options.add_argument('--headless=new')  # 使用新的无头模式
             
             options.add_argument('--disable-blink-features=AutomationControlled')
             options.add_argument('--no-sandbox')
@@ -130,6 +130,14 @@ class LETMonitor:
             options.add_argument('--disable-gpu')
             options.add_argument('--window-size=1920,1080')
             options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            
+            # ===== 强制使用 IPv6 =====
+            # 禁用 IPv4，强制使用 IPv6
+            options.add_argument('--disable-ipv4')
+            # 通过 DNS 优先 IPv6
+            options.add_argument('--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE ::ffff:0:0/96')
+            logger.info("🌐 Chrome 配置为优先使用 IPv6")
+            # ===== IPv6 配置结束 =====
             
             # 内存优化参数（防止崩溃）
             options.add_argument('--disable-extensions')
@@ -561,10 +569,14 @@ class LETMonitor:
                     
                     # 检查是否是 Cloudflare 需要重启的情况
                     if "需要重启 Driver" in error_msg or "Cloudflare" in error_msg:
-                        logger.error(f"🔄 检测到 Cloudflare 卡住，执行强制重启...")
+                        logger.error(f"🔄 检测到 Cloudflare 卡住（{self.cf_fail_count}次失败），执行强制重启...")
                         try:
-                            self.restart_driver()
-                            logger.info("✅ 重启完成，继续监控...")
+                            # ===== 重启并切换 IPv6 =====
+                            logger.info("🌐 同时执行 IPv6 地址轮换以绕过 Cloudflare")
+                            self.restart_driver(rotate_ipv6=True)  # 传入 True 触发 IPv6 轮换
+                            # ===== 重启结束 =====
+                            
+                            logger.info("✅ 重启和 IPv6 轮换完成，继续监控...")
                             # 重置失败计数
                             self.cf_fail_count = 0
                             # 等待一会儿再继续
@@ -587,8 +599,12 @@ class LETMonitor:
         finally:
             self.cleanup()
     
-    def restart_driver(self):
-        """重启 Chrome driver（防止内存泄漏）"""
+    def restart_driver(self, rotate_ipv6=False):
+        """重启 Chrome driver（防止内存泄漏）
+        
+        Args:
+            rotate_ipv6: 是否在重启前轮换 IPv6 地址
+        """
         logger.info("🔄 重启 Chrome driver 以释放资源...")
         
         # 关闭旧的 driver
@@ -600,6 +616,36 @@ class LETMonitor:
         
         # 等待一下确保资源释放
         time.sleep(2)
+        
+        # ===== 轮换 IPv6（如果需要）=====
+        if rotate_ipv6:
+            logger.info("🌐 开始轮换 IPv6 地址...")
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ['python3', 'ipv6_rotate.py'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                if result.returncode == 0:
+                    logger.info(f"✅ IPv6 轮换成功")
+                    # 记录输出（包含切换的IP）
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            logger.info(f"   {line}")
+                else:
+                    logger.warning(f"⚠️  IPv6 轮换失败: {result.stderr}")
+                    
+                # 额外等待确保网络配置生效
+                time.sleep(3)
+                
+            except subprocess.TimeoutExpired:
+                logger.error("❌ IPv6 轮换超时")
+            except Exception as e:
+                logger.error(f"❌ IPv6 轮换出错: {e}")
+        # ===== IPv6 轮换结束 =====
         
         # 初始化新的 driver
         self.init_driver()
