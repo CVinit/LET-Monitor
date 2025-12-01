@@ -42,6 +42,11 @@ class Config:
     
     # Cloudflare 卡住检测
     MAX_CF_FAILS = int(os.getenv('MAX_CF_FAILS', '3'))  # 同一页面最大 CF 失败次数（超过后重启 Driver）
+    MAX_PAGE_CF_RETRIES = int(os.getenv('MAX_PAGE_CF_RETRIES', '3'))  # 每个页面最大 CF 重试次数（超过后跳过页面）
+    
+    # 随机等待时间配置（秒）
+    WAIT_MIN = int(os.getenv('WAIT_MIN', '30'))  # 最小等待时间
+    WAIT_MAX = int(os.getenv('WAIT_MAX', '120'))  # 最大等待时间
     
     # 日志配置
     LOG_FILE = 'monitor.log'

@@ -95,6 +95,7 @@ class LETMonitorCurlCffi:
         self.pages_checked = 0
         self.current_page_num = None
         self.fail_count = 0
+        self.page_cf_retry_count = 0  # 当前页面的 CF 重试次数
     
     def init_session(self):
         """初始化 HTTP 会话"""
@@ -267,17 +268,24 @@ class LETMonitorCurlCffi:
         """检查指定页面"""
         max_retries = Config.MAX_PAGE_RETRIES
         
+        # 重置当前页面的 CF 重试计数
+        if self.current_page_num != page_num:
+            self.page_cf_retry_count = 0
+        
         for retry in range(max_retries):
             try:
                 html = self.load_page(page_num)
                 
                 if not html:
-                    if retry < max_retries - 1:
-                        logger.warning(f"⚠️  第 {retry + 1} 次尝试失败，重试...")
-                        time.sleep(10)
-                        continue
-                    else:
-                        return {'comments': [], 'total': 0, 'not_found': True}
+                    # 检查是否是 CF 挑战失败
+                    if self.page_cf_retry_count >= Config.MAX_PAGE_CF_RETRIES:
+                        logger.error(f"❌ 页面 {page_num} CF 挑战失败 {self.page_cf_retry_count} 次，放弃此页面")
+                        return {'comments': [], 'total': 0, 'skip_page': True}
+                    
+                    self.page_cf_retry_count += 1
+                    logger.warning(f"⚠️  第 {retry + 1} 次尝试失败（CF 重试 {self.page_cf_retry_count}/{Config.MAX_PAGE_CF_RETRIES}），重试...")
+                    time.sleep(10)
+                    continue
                 
                 result = self.parse_comments(html, page_num)
                 
@@ -357,12 +365,21 @@ class LETMonitorCurlCffi:
                     if self.current_page_num != current_page:
                         self.current_page_num = current_page
                         self.fail_count = 0
+                        self.page_cf_retry_count = 0
                     
                     result = self.check_page(current_page)
                     
+                    # 检查是否因 CF 重试次数过多而跳过
+                    if result.get('skip_page'):
+                        logger.warning(f"⏭️  跳过页面 {current_page}，切换到下一页")
+                        current_page += 1
+                        continue
+                    
                     if result.get('not_found'):
-                        logger.warning(f"⏸️  页面 {current_page} 尚不存在，等待...")
-                        time.sleep(Config.CHECK_INTERVAL)
+                        # 使用随机等待时间
+                        wait_time = random.randint(Config.WAIT_MIN, Config.WAIT_MAX)
+                        logger.warning(f"⏸️  页面 {current_page} 尚不存在，等待 {wait_time} 秒...")
+                        time.sleep(wait_time)
                         continue
                     
                     comments = result.get('comments', [])
@@ -390,11 +407,15 @@ class LETMonitorCurlCffi:
                             logger.info(f"📊 已检查 {self.pages_checked} 页")
                             self.rotate_ipv6()
                             self.pages_checked = 0
+                        
+                        # 页面已满，使用固定间隔
+                        logger.info(f"⏳ 等待 {Config.CHECK_INTERVAL} 秒...")
+                        time.sleep(Config.CHECK_INTERVAL)
                     else:
-                        logger.info(f"⏳ 仅 {total_comments} 条，继续等待...")
-                    
-                    logger.info(f"⏳ 等待 {Config.CHECK_INTERVAL} 秒...")
-                    time.sleep(Config.CHECK_INTERVAL)
+                        # 页面未满，使用随机等待时间
+                        wait_time = random.randint(Config.WAIT_MIN, Config.WAIT_MAX)
+                        logger.info(f"⏳ 仅 {total_comments} 条，随机等待 {wait_time} 秒（{Config.WAIT_MIN}-{Config.WAIT_MAX}）...")
+                        time.sleep(wait_time)
                     
                 except KeyboardInterrupt:
                     logger.info("\n⏹️  收到中断信号，停止监控...")
