@@ -132,7 +132,14 @@ class LETMonitorCurlCffi:
         return f"{Config.THREAD_BASE_URL}{page_num}"
     
     def load_page(self, page_num: int) -> Optional[str]:
-        """加载指定页面"""
+        """加载指定页面
+        
+        Returns:
+            str: 页面 HTML（成功）
+            'not_found': HTTP 404，页面不存在
+            'cf_challenge': Cloudflare 挑战失败
+            None: 其他错误
+        """
         try:
             url = self.get_page_url(page_num)
             logger.info(f"📖 加载页面: {url}")
@@ -149,6 +156,10 @@ class LETMonitorCurlCffi:
             )
             
             # 检查状态码
+            if response.status_code == 404:
+                logger.warning(f"⚠️  HTTP 404: 页面不存在")
+                return 'not_found'  # 返回特殊标记
+            
             if response.status_code != 200:
                 logger.error(f"❌ HTTP 状态码: {response.status_code}")
                 return None
@@ -159,7 +170,7 @@ class LETMonitorCurlCffi:
             
             if any(keyword in content for keyword in cf_keywords):
                 logger.warning("⚠️  检测到 Cloudflare 挑战页面")
-                return None
+                return 'cf_challenge'  # 返回 CF 挑战标记
             
             logger.info(f"✅ 页面 {page_num} 加载成功")
             return response.text
@@ -274,25 +285,49 @@ class LETMonitorCurlCffi:
         
         for retry in range(max_retries):
             try:
-                html = self.load_page(page_num)
+                result = self.load_page(page_num)
                 
-                if not html:
-                    # 检查是否是 CF 挑战失败
-                    if self.page_cf_retry_count >= Config.MAX_PAGE_CF_RETRIES:
-                        logger.error(f"❌ 页面 {page_num} CF 挑战失败 {self.page_cf_retry_count} 次，放弃此页面")
-                        return {'comments': [], 'total': 0, 'skip_page': True}
-                    
-                    self.page_cf_retry_count += 1
-                    logger.warning(f"⚠️  第 {retry + 1} 次尝试失败（CF 重试 {self.page_cf_retry_count}/{Config.MAX_PAGE_CF_RETRIES}），重试...")
-                    time.sleep(10)
-                    continue
-                
-                result = self.parse_comments(html, page_num)
-                
-                if result is None:
+                # 情况 1: HTTP 404，页面不存在（应该等待，不计入 CF 次数）
+                if result == 'not_found':
+                    logger.info(f"ℹ️  页面 {page_num} 尚未创建（404），应等待而非跳过")
                     return {'comments': [], 'total': 0, 'not_found': True}
                 
-                return result
+                # 情况 2: Cloudflare 挑战失败（计入 CF 次数）
+                if result == 'cf_challenge':
+                    self.page_cf_retry_count += 1
+                    logger.warning(f"⚠️  CF 挑战失败 ({self.page_cf_retry_count}/{Config.MAX_PAGE_CF_RETRIES})")
+                    
+                    # 检查是否达到 CF 重试上限
+                    if self.page_cf_retry_count >= Config.MAX_PAGE_CF_RETRIES:
+                        logger.error(f"❌ 页面 {page_num} CF 挑战连续失败 {self.page_cf_retry_count} 次，放弃此页面")
+                        return {'comments': [], 'total': 0, 'skip_page': True}
+                    
+                    # 未达到上限，继续重试
+                    if retry < max_retries - 1:
+                        logger.info(f"🔄 等待 10 秒后重试...")
+                        time.sleep(10)
+                        continue
+                    else:
+                        # 重试次数用完
+                        return {'comments': [], 'total': 0, 'skip_page': True}
+                
+                # 情况 3: 其他错误（None）
+                if result is None:
+                    if retry < max_retries - 1:
+                        logger.warning(f"⚠️  第 {retry + 1} 次尝试失败，重试...")
+                        time.sleep(10)
+                        continue
+                    else:
+                        return {'comments': [], 'total': 0, 'not_found': True}
+                
+                # 情况 4: 成功获取到 HTML
+                parsed = self.parse_comments(result, page_num)
+                
+                if parsed is None:
+                    # parse_comments 返回 None 表示页面内容显示 "Page not found"
+                    return {'comments': [], 'total': 0, 'not_found': True}
+                
+                return parsed
                 
             except Exception as e:
                 logger.error(f"❌ 检查页面 {page_num} 时出错: {e}")
